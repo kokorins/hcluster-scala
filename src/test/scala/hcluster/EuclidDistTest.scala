@@ -35,7 +35,7 @@ class EuclidDistTest extends FunSuite {
     val ed = new EuclidSimilarityMetric {}
     val compare = (i: Int, j: Int) => ed.compare(input(i), input(j))
     val similarityMatrix = SimilarityMatrix(compare, pairs, 0d)
-    val dendrogram = Dendrogram(input.size, similarityMatrix)
+    val dendrogram = Dendrogram(similarityMatrix)
     System.out.println(Dendrogram.thresholds(dendrogram))
   }
 }

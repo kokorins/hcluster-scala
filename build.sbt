@@ -1,4 +1,4 @@
-name := "playground"
+name := "hcluster"
 
 version := "0.1"
 
