@@ -8,18 +8,50 @@ import com.typesafe.scalalogging.Logging
 import scala.collection.immutable
 
 trait Dendrogram {
+  /**
+   * Clusters to be joined
+   * @return the list of clusters
+   */
   def clusters: IndexedSeq[Cluster] = collectClusters(Vector())
+
+  /**
+   * Internal function which accumulates the clusters from all the subdendrograms
+   * @param accum the vector of already accumulated clusters
+   * @return the vector of clusters
+   */
   def collectClusters(accum: IndexedSeq[Cluster]): IndexedSeq[Cluster]
 
-  def cutAt(threshold: Similarity) = doCutAt(Vector(), threshold)
+  /**
+   * Input points for dendrogram cut levels
+   * @param threshold the level of similarity used for threshold
+   * @return the vector of distinct dendrograms
+   */
+  def cutAt(threshold: Similarity):IndexedSeq[Dendrogram] = doCutAt(Vector(), threshold)
+
+  /**
+   * Internal function that implements the dendrogram tree construction with a given similarity threshold
+   * @param accum contains the already collected trees
+   * @param threshold the level of similarity
+   * @return vector of dinstinct trees
+   */
   def doCutAt(accum: IndexedSeq[Dendrogram], threshold: Similarity): IndexedSeq[Dendrogram]
 }
 
+/**
+ * Leaf of dendrogram that contains only one cluster
+ * @param cluster that contains in a given tree
+ */
 case class Leaf(cluster: Cluster) extends Dendrogram {
   def collectClusters(accum: IndexedSeq[Cluster]) = cluster +: accum
   def doCutAt(accum: IndexedSeq[Dendrogram], threshold: Similarity) = this +: accum
 }
 
+/**
+ * Group of trees that should be joined in a given level of similarity
+ * @param similarity level of join
+ * @param left left subtree
+ * @param right right subtree
+ */
 case class Branch(similarity: Similarity, left: Dendrogram, right: Dendrogram) extends Dendrogram {
   def collectClusters(accum: IndexedSeq[Cluster]) = right.collectClusters(left.collectClusters(accum))
   def doCutAt(accum: IndexedSeq[Dendrogram], threshold: Similarity) =
@@ -30,6 +62,12 @@ case class Branch(similarity: Similarity, left: Dendrogram, right: Dendrogram) e
 object Dendrogram extends Logging {
   val logger = Logger(LoggerFactory getLogger "Dendrogram")
 
+  /**
+   * Constructs dendrogram from first input elements
+   * @param size number of elements to take
+   * @param similarityMatrix distances between input elements
+   * @return constructed dendrogram
+   */
   def apply(size: Int, similarityMatrix: SimilarityMatrix): Dendrogram = {
     val seedPairs: IndexedSeq[(Index, Leaf)] = for (i <- 0 until size) yield (i, Leaf(Cluster(i)))
     val seedMap: Map[Index, Dendrogram] = Map[Int, Dendrogram](seedPairs: _*)
@@ -39,14 +77,22 @@ object Dendrogram extends Logging {
 
   // TODO Add unit test to Dendrogram.apply(IndexedSeq[Cluster, SimilarityMatrix)
   def apply(clusters: Seq[Cluster], similarityMatrix: SimilarityMatrix): Dendrogram = {
-    val seedPairs: IndexedSeq[(Index, Leaf)] = for (i <- 0 until clusters.length) yield (i, Leaf(clusters(i)))
+    val seedPairs: IndexedSeq[(Index, Leaf)] = for (i <- clusters.indices) yield (i, Leaf(clusters(i)))
     val seedMap: Map[Index, Dendrogram] = Map[Int, Dendrogram](seedPairs: _*)
     val (index: Index, dendrograms: Map[Index, Dendrogram]) = agglomerate(clusters.length, seedMap, similarityMatrix)
     dendrograms(index - 1)
   }
 
+  /**
+   * Construct dendrogram joining subclusters into branches starting from each node as a separate cluster
+   * @param mapIndex
+   * @param dendrograms
+   * @param similarityMatrix
+   * @return
+   */
   private def agglomerate(mapIndex: Int, dendrograms: Map[Int, Dendrogram], similarityMatrix: SimilarityMatrix): (Index, Map[Int, Dendrogram]) =
-    if (dendrograms.size == 1) (mapIndex, dendrograms)
+    if (dendrograms.size == 1)
+      (mapIndex, dendrograms)
     else {
       val (newmapIndex: Index, newDendrograms: Map[Index, Dendrogram]) = merge(mapIndex, dendrograms, similarityMatrix)
       agglomerate(newmapIndex, newDendrograms, similarityMatrix)
@@ -56,7 +102,7 @@ object Dendrogram extends Logging {
     val dendrogramVector: Vector[(Index, Dendrogram)] = dendrograms.toVector
 
     val pairs: IndexedSeq[(Index, Index)] = for {
-      i <- 0 until dendrogramVector.length
+      i <- dendrogramVector.indices
       j <- i + 1 until dendrogramVector.length
     } yield (i, j)
 
@@ -68,8 +114,10 @@ object Dendrogram extends Logging {
         rightCentroid = rightCluster.centroid
       } yield similarityMatrix(leftCentroid, rightCentroid)
 
-      if (similarities.length == 0) 0d
-      else similarities.sum / similarities.length
+      if (similarities.isEmpty)
+        0d
+      else
+        similarities.sum / similarities.length
     }
 
     def similarityTriplet(pair: (Index, Index)): (Index, Index, Similarity) = {
@@ -78,7 +126,8 @@ object Dendrogram extends Logging {
       val (rightIndex: Index, rightDendrogram: Dendrogram) = dendrogramVector(j)
       (leftIndex, rightIndex, dendrogramSimilarity(leftDendrogram, rightDendrogram))
     }
-    val similarityTriplets: IndexedSeq[(Index, Index, Similarity)] =
+
+    var similarityTriplets: IndexedSeq[(Index, Index, Similarity)] =
       (pairs map similarityTriplet) sortBy(-_._3) // 0 <= s <= 1
 
     def doMerge(indexMapPair: (Int, Map[Int, Dendrogram]), triplet: (Index, Index, Similarity)) = {
@@ -91,9 +140,26 @@ object Dendrogram extends Logging {
         (currentMapIndex + 1, dendrograms - i - j + (currentMapIndex -> Branch(similarity, dendrograms(i), dendrograms(j))))
     }
 
-    similarityTriplets.foldLeft(mapIndex, dendrograms)(doMerge)
+    def doMerge2(triplets:IndexedSeq[(Index, Index, Similarity)], indexMapPair:(Int, Map[Int, Dendrogram])):(Int, Map[Int, Dendrogram]) = {
+      val (i: Index, j: Index, similarity: Similarity) = triplets.head
+      val (currentMapIndex: Index, dendrograms: Map[Index, Dendrogram]) = indexMapPair
+
+      if (!((dendrograms contains i) && (dendrograms contains j)))
+        doMerge2(triplets.tail, indexMapPair)
+      else
+        (currentMapIndex + 1, dendrograms - i - j + (currentMapIndex -> Branch(similarity, dendrograms(i), dendrograms(j))))
+    }
+
+
+//    doMerge2(similarityTriplets, (mapIndex, dendrograms))
+    similarityTriplets.foldLeft(mapIndex, dendrograms)(doMerge) // Bug with non best joining in case of multiple independent joins
   }
 
+  /**
+   * Extracts the threshold of dendrogram branch joins
+   * @param dendrogram to be calculated
+   * @return the sorted sequence of similarities levels
+   */
   def thresholds(dendrogram: Dendrogram): Seq[Similarity] = {
     def go(accum: Seq[Similarity], dendrogram: Dendrogram): Seq[Similarity] = dendrogram match {
       case Leaf(_) => accum
