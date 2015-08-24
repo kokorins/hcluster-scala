@@ -22,7 +22,7 @@ trait SimilarityMatrix {
     if (!(index >= 0 && index < size))
       throw new IllegalArgumentException(s"Invalid index not between 0 and ${size - 1}:  $index")
 
-  override def toString = s"$size: ${map.toString}"
+  override def toString = s"$size: ${map.toString()}"
 }
 
 object SimilarityMatrix {

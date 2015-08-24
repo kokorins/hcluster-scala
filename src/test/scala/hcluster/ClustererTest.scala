@@ -20,7 +20,7 @@ class ClustererTest extends FunSuite with Logging {
   test("Build proper clusters") {
     val clusterer = new Clusterer[String]
       with LuceneSimilarityMetric
-      with ExahaustivePairGenerator
+      with ExhaustivePairGenerator
       with MaxIntraSimilarityClusterEvaluator
     {
       val distance = new JaroWinklerDistance
@@ -44,7 +44,7 @@ object ClustererTest extends App {
   val metrics = for (threshold <- start to end by step) yield {
     val clusterer = new Clusterer[String]
       with LuceneSimilarityMetric
-      with ExahaustivePairGenerator
+      with ExhaustivePairGenerator
       with MaxIntraSimilarityClusterEvaluator // DaviesBouldinClusterEvaluator
     {
       val distance = new JaroWinklerDistance
